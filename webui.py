@@ -32,6 +32,18 @@ hide_streamlit_style = """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 
+def ensure_python_bin_on_path():
+    """Expose venv command-line tools when Streamlit is launched by absolute Python path."""
+    python_bin_dir = os.path.dirname(sys.executable)
+    if not python_bin_dir:
+        return
+
+    current_path = os.environ.get("PATH", "")
+    path_parts = current_path.split(os.pathsep) if current_path else []
+    if python_bin_dir not in path_parts:
+        os.environ["PATH"] = os.pathsep.join([python_bin_dir, *path_parts])
+
+
 def init_log():
     """初始化日志配置"""
     from loguru import logger
@@ -364,6 +376,7 @@ def render_export_jianying_button():
 
 def main():
     """主函数"""
+    ensure_python_bin_on_path()
     init_log()
     init_global_state()
 
