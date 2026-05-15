@@ -12,7 +12,7 @@ def register_all_providers():
     """
     注册所有提供商
 
-    当前实现：只注册 OpenAI 兼容统一接口
+    当前实现：注册 OpenAI 兼容统一接口和 Codex OAuth 接口
     """
     # 在函数内部导入，避免循环依赖
     from ..manager import LLMServiceManager
@@ -23,14 +23,20 @@ def register_all_providers():
         OpenAICompatibleVisionProvider,
         OpenAICompatibleTextProvider,
     )
+    from ..codex_oauth_provider import (
+        CodexOAuthVisionProvider,
+        CodexOAuthTextProvider,
+    )
 
     logger.info("🔧 开始注册 LLM 提供商...")
 
     # ===== 注册 OpenAI 兼容统一接口 =====
     LLMServiceManager.register_vision_provider('openai', OpenAICompatibleVisionProvider)
     LLMServiceManager.register_text_provider('openai', OpenAICompatibleTextProvider)
+    LLMServiceManager.register_vision_provider('codex', CodexOAuthVisionProvider)
+    LLMServiceManager.register_text_provider('codex', CodexOAuthTextProvider)
 
-    logger.info("✅ OpenAI 兼容提供商注册完成")
+    logger.info("✅ LLM 提供商注册完成")
 
 
 # 导出注册函数

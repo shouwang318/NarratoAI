@@ -28,6 +28,14 @@ class DummyOpenAITextProvider(TextModelProvider):
         return payload
 
 
+class DummyNoKeyTextProvider(DummyOpenAITextProvider):
+    requires_api_key = False
+
+    @property
+    def provider_name(self) -> str:
+        return "codex"
+
+
 def _reset_manager_state():
     LLMServiceManager._vision_providers.clear()
     LLMServiceManager._text_providers.clear()
@@ -45,11 +53,11 @@ class OpenAICompatManagerTests(unittest.TestCase):
         config.app.clear()
         config.app.update(self._original_app)
 
-    def test_register_all_providers_only_registers_openai_provider(self):
+    def test_register_all_providers_registers_openai_and_codex_providers(self):
         register_all_providers()
 
-        self.assertEqual({"openai"}, set(LLMServiceManager.list_text_providers()))
-        self.assertEqual({"openai"}, set(LLMServiceManager.list_vision_providers()))
+        self.assertEqual({"openai", "codex"}, set(LLMServiceManager.list_text_providers()))
+        self.assertEqual({"openai", "codex"}, set(LLMServiceManager.list_vision_providers()))
 
     def test_get_text_provider_uses_openai_keys(self):
         LLMServiceManager.register_text_provider("openai", DummyOpenAITextProvider)
@@ -65,6 +73,19 @@ class OpenAICompatManagerTests(unittest.TestCase):
         self.assertEqual("new-key", provider.api_key)
         self.assertEqual("new-model", provider.model_name)
         self.assertEqual("https://new.example/v1", provider.base_url)
+
+    def test_get_text_provider_allows_no_key_provider(self):
+        LLMServiceManager.register_text_provider("codex", DummyNoKeyTextProvider)
+
+        config.app["text_llm_provider"] = "codex"
+        config.app["text_codex_api_key"] = ""
+        config.app["text_codex_model_name"] = "gpt-5.4"
+
+        provider = LLMServiceManager.get_text_provider()
+
+        self.assertIsInstance(provider, DummyNoKeyTextProvider)
+        self.assertEqual("", provider.api_key)
+        self.assertEqual("gpt-5.4", provider.model_name)
 
 
 class OpenAICompatVisionConcurrencyTests(unittest.IsolatedAsyncioTestCase):

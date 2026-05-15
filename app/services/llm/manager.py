@@ -128,7 +128,7 @@ class LLMServiceManager:
         config_prefix = f"vision_{provider_name}"
         api_key, model_name, base_url = cls._get_provider_config("vision", provider_name)
         
-        if not api_key:
+        if getattr(cls._vision_providers[provider_name], "requires_api_key", True) and not api_key:
             raise ConfigurationError(f"缺少API密钥配置: {config_prefix}_api_key")
         
         if not model_name:
@@ -199,7 +199,7 @@ class LLMServiceManager:
         config_prefix = f"text_{provider_name}"
         api_key, model_name, base_url = cls._get_provider_config("text", provider_name)
         
-        if not api_key:
+        if getattr(cls._text_providers[provider_name], "requires_api_key", True) and not api_key:
             raise ConfigurationError(f"缺少API密钥配置: {config_prefix}_api_key")
         
         if not model_name:

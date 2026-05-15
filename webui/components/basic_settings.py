@@ -2,12 +2,16 @@ import traceback
 
 import streamlit as st
 import os
+import subprocess
 from app.config import config
 from app.config.defaults import (
+    DEFAULT_CODEX_PROVIDER,
+    DEFAULT_TEXT_CODEX_MODEL_NAME,
     DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
     DEFAULT_OPENAI_COMPATIBLE_PROVIDER,
     DEFAULT_TEXT_LLM_PROVIDER,
     DEFAULT_TEXT_OPENAI_MODEL_NAME,
+    DEFAULT_VISION_CODEX_MODEL_NAME,
     DEFAULT_VISION_LLM_PROVIDER,
     DEFAULT_VISION_OPENAI_MODEL_NAME,
     get_openai_compatible_ui_values,
@@ -24,6 +28,8 @@ OPENAI_COMPATIBLE_GATEWAY_BASE_URLS = {
     "moonshot": "https://api.moonshot.cn/v1",
     "gemini(openai)": "",
 }
+
+LLM_PROVIDER_OPTIONS = [DEFAULT_OPENAI_COMPATIBLE_PROVIDER, DEFAULT_CODEX_PROVIDER]
 
 
 def build_base_url_help(provider: str, model_type: str) -> tuple[str, bool, str]:
@@ -80,6 +86,33 @@ def validate_model_name(model_name: str, provider: str) -> tuple[bool, str]:
         return False, f"{provider} 模型名称不能为空"
 
     return True, ""
+
+
+def test_codex_oauth_connection(model_name: str, tr) -> tuple[bool, str]:
+    """Verify that the local Codex CLI is authenticated with ChatGPT OAuth."""
+    if not model_name or not model_name.strip():
+        return False, "请先输入 Codex 模型名称"
+
+    codex_command = config.app.get("codex_command", "codex") or "codex"
+    try:
+        result = subprocess.run(
+            [codex_command, "login", "status"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except FileNotFoundError:
+        return False, f"未找到 Codex 命令：{codex_command}"
+    except subprocess.TimeoutExpired:
+        return False, "Codex 登录状态检查超时"
+
+    output = "\n".join(part for part in [result.stdout, result.stderr] if part).strip()
+    if result.returncode != 0:
+        return False, output or "Codex 尚未登录，请先运行 `codex login`"
+    if "ChatGPT" not in output:
+        return False, "Codex 已登录，但不是 ChatGPT OAuth。请运行 `codex logout` 后再运行 `codex login`。"
+    return True, f"Codex OAuth 可用，模型：{model_name.strip()}"
 
 
 def validate_openai_compatible_model_name(model_name: str, model_type: str) -> tuple[bool, str]:
@@ -435,52 +468,86 @@ def test_openai_compatible_text_model(api_key: str, base_url: str, model_name: s
         return False, f"连接失败: {error_msg}"
 
 def render_vision_llm_settings(tr):
-    """渲染视频分析模型设置（OpenAI 兼容 统一配置）"""
+    """渲染视频分析模型设置"""
     st.subheader(tr("Vision Model Settings"))
 
-    # 固定使用 OpenAI 兼容 提供商
-    config.app["vision_llm_provider"] = DEFAULT_VISION_LLM_PROVIDER
+    current_llm_provider = config.app.get("vision_llm_provider", DEFAULT_VISION_LLM_PROVIDER)
+    if current_llm_provider not in LLM_PROVIDER_OPTIONS:
+        current_llm_provider = DEFAULT_VISION_LLM_PROVIDER
 
-    # 获取已保存的配置
     full_vision_model_name = config.app.get("vision_openai_model_name") or DEFAULT_VISION_OPENAI_MODEL_NAME
     vision_api_key = config.app.get("vision_openai_api_key", "")
     vision_base_url = config.app.get("vision_openai_base_url", DEFAULT_OPENAI_COMPATIBLE_BASE_URL)
-    
-    # 固定 provider 为 openai，模型输入框保留完整模型名称
-    current_provider, current_model = get_openai_compatible_ui_values(
+    codex_model_name = config.app.get("vision_codex_model_name") or DEFAULT_VISION_CODEX_MODEL_NAME
+
+    openai_provider, openai_model = get_openai_compatible_ui_values(
         full_vision_model_name,
         DEFAULT_VISION_OPENAI_MODEL_NAME,
         provider=DEFAULT_VISION_LLM_PROVIDER,
     )
 
-    # 定义支持的 provider 列表
-    OPENAI_COMPATIBLE_PROVIDERS = ["openai"]
-
-    # 渲染配置输入框
     col1, col2 = st.columns([1, 2])
     with col1:
         selected_provider = st.selectbox(
             tr("Vision Model Provider"),
-            options=OPENAI_COMPATIBLE_PROVIDERS,
-            index=OPENAI_COMPATIBLE_PROVIDERS.index(current_provider) if current_provider in OPENAI_COMPATIBLE_PROVIDERS else 0,
+            options=LLM_PROVIDER_OPTIONS,
+            index=LLM_PROVIDER_OPTIONS.index(current_llm_provider),
             key="vision_provider_select"
         )
-    
+
     with col2:
+        model_default = codex_model_name if selected_provider == DEFAULT_CODEX_PROVIDER else openai_model
         model_name_input = st.text_input(
             tr("Vision Model Name"),
-            value=current_model,
-            help="输入完整模型名称\n\n"
-                 "常用示例:\n"
-                 "• Qwen/Qwen3.5-122B-A10B\n"
-                 "• gemini/gemini-2.0-flash-lite\n"
-                 "• gpt-4o\n"
-                 "• Qwen/Qwen2.5-VL-32B-Instruct (SiliconFlow)\n\n"
-                 "支持常见 OpenAI 兼容网关（如 OpenAI/DeepSeek/OpenRouter/SiliconFlow）",
+            value=model_default,
+            help=(
+                "Codex OAuth 模式示例: gpt-5.4\n\n"
+                "OpenAI 兼容模式示例:\n"
+                "• Qwen/Qwen3.5-122B-A10B\n"
+                "• gemini/gemini-2.0-flash-lite\n"
+                "• gpt-4o\n"
+                "• Qwen/Qwen2.5-VL-32B-Instruct (SiliconFlow)"
+            ),
             key="vision_model_input"
         )
 
-    # 组合完整的模型名称
+    if selected_provider == DEFAULT_CODEX_PROVIDER:
+        st_vision_model_name = (model_name_input or "").strip()
+
+        if st.button(tr("Test Connection"), key="test_vision_connection"):
+            with st.spinner(tr("Testing connection...")):
+                success, message = test_codex_oauth_connection(st_vision_model_name, tr)
+                if success:
+                    st.success(message)
+                else:
+                    st.error(message)
+
+        validation_errors = []
+        config_changed = False
+        is_valid, error_msg = validate_model_name(st_vision_model_name, "Codex")
+        if is_valid:
+            config_changed = (
+                config.app.get("vision_llm_provider") != DEFAULT_CODEX_PROVIDER
+                or config.app.get("vision_codex_model_name") != st_vision_model_name
+            )
+            if config_changed:
+                config.app["vision_llm_provider"] = DEFAULT_CODEX_PROVIDER
+                config.app["vision_codex_model_name"] = st_vision_model_name
+            st.session_state["vision_codex_model_name"] = st_vision_model_name
+        else:
+            validation_errors.append(error_msg)
+
+        show_config_validation_errors(validation_errors)
+        if config_changed and not validation_errors:
+            try:
+                config.save_config()
+                UnifiedLLMService.clear_cache()
+                st.success("视频分析模型配置已保存（Codex OAuth）")
+            except Exception as e:
+                st.error(f"保存配置失败: {str(e)}")
+                logger.error(f"保存视频分析 Codex 配置失败: {str(e)}")
+        return
+
     st_vision_model_name = normalize_openai_compatible_model_name(model_name_input)
 
     st_vision_api_key = st.text_input(
@@ -496,7 +563,7 @@ def render_vision_llm_settings(tr):
     )
 
     vision_base_help, vision_base_required, vision_placeholder = build_base_url_help(
-        selected_provider, "视频分析模型"
+        openai_provider, "视频分析模型"
     )
     st_vision_base_url = st.text_input(
         tr("Vision Base URL"),
@@ -508,7 +575,6 @@ def render_vision_llm_settings(tr):
         info_example = vision_placeholder or "https://your-openai-compatible-endpoint/v1"
         st.info(f"请在上方填写 OpenAI 兼容网关地址，例如：{info_example}")
 
-    # 添加测试连接按钮
     if st.button(tr("Test Connection"), key="test_vision_connection"):
         test_errors = []
         if not st_vision_api_key:
@@ -546,6 +612,7 @@ def render_vision_llm_settings(tr):
         # 这里的验证逻辑可能需要微调，因为我们现在是自动组合的
         is_valid, error_msg = validate_openai_compatible_model_name(st_vision_model_name, "视频分析")
         if is_valid:
+            config.app["vision_llm_provider"] = DEFAULT_OPENAI_COMPATIBLE_PROVIDER
             config.app["vision_openai_model_name"] = st_vision_model_name
             st.session_state["vision_openai_model_name"] = st_vision_model_name
             config_changed = True
@@ -692,52 +759,86 @@ def test_text_model_connection(api_key, base_url, model_name, provider, tr):
 
 
 def render_text_llm_settings(tr):
-    """渲染文案生成模型设置（OpenAI 兼容 统一配置）"""
+    """渲染文案生成模型设置"""
     st.subheader(tr("Text Generation Model Settings"))
 
-    # 固定使用 OpenAI 兼容 提供商
-    config.app["text_llm_provider"] = DEFAULT_TEXT_LLM_PROVIDER
+    current_llm_provider = config.app.get("text_llm_provider", DEFAULT_TEXT_LLM_PROVIDER)
+    if current_llm_provider not in LLM_PROVIDER_OPTIONS:
+        current_llm_provider = DEFAULT_TEXT_LLM_PROVIDER
 
-    # 获取已保存的配置
     full_text_model_name = config.app.get("text_openai_model_name") or DEFAULT_TEXT_OPENAI_MODEL_NAME
     text_api_key = config.app.get("text_openai_api_key", "")
     text_base_url = config.app.get("text_openai_base_url", DEFAULT_OPENAI_COMPATIBLE_BASE_URL)
+    codex_model_name = config.app.get("text_codex_model_name") or DEFAULT_TEXT_CODEX_MODEL_NAME
 
-    # 固定 provider 为 openai，模型输入框保留完整模型名称
-    current_provider, current_model = get_openai_compatible_ui_values(
+    openai_provider, openai_model = get_openai_compatible_ui_values(
         full_text_model_name,
         DEFAULT_TEXT_OPENAI_MODEL_NAME,
         provider=DEFAULT_TEXT_LLM_PROVIDER,
     )
 
-    # 定义支持的 provider 列表
-    OPENAI_COMPATIBLE_PROVIDERS = ["openai"]
-
-    # 渲染配置输入框
     col1, col2 = st.columns([1, 2])
     with col1:
         selected_provider = st.selectbox(
             tr("Text Model Provider"),
-            options=OPENAI_COMPATIBLE_PROVIDERS,
-            index=OPENAI_COMPATIBLE_PROVIDERS.index(current_provider) if current_provider in OPENAI_COMPATIBLE_PROVIDERS else 0,
+            options=LLM_PROVIDER_OPTIONS,
+            index=LLM_PROVIDER_OPTIONS.index(current_llm_provider),
             key="text_provider_select"
         )
-    
+
     with col2:
+        model_default = codex_model_name if selected_provider == DEFAULT_CODEX_PROVIDER else openai_model
         model_name_input = st.text_input(
             tr("Text Model Name"),
-            value=current_model,
-            help="输入完整模型名称\n\n"
-                 "常用示例:\n"
-                 "• Pro/zai-org/GLM-5\n"
-                 "• deepseek/deepseek-chat\n"
-                 "• gpt-4o\n"
-                 "• deepseek-ai/DeepSeek-R1 (SiliconFlow)\n\n"
-                 "支持常见 OpenAI 兼容网关（如 OpenAI/DeepSeek/OpenRouter/SiliconFlow）",
+            value=model_default,
+            help=(
+                "Codex OAuth 模式示例: gpt-5.4\n\n"
+                "OpenAI 兼容模式示例:\n"
+                "• Pro/zai-org/GLM-5\n"
+                "• deepseek/deepseek-chat\n"
+                "• gpt-4o\n"
+                "• deepseek-ai/DeepSeek-R1 (SiliconFlow)"
+            ),
             key="text_model_input"
         )
 
-    # 组合完整的模型名称
+    if selected_provider == DEFAULT_CODEX_PROVIDER:
+        st_text_model_name = (model_name_input or "").strip()
+
+        if st.button(tr("Test Connection"), key="test_text_connection"):
+            with st.spinner(tr("Testing connection...")):
+                success, message = test_codex_oauth_connection(st_text_model_name, tr)
+                if success:
+                    st.success(message)
+                else:
+                    st.error(message)
+
+        text_validation_errors = []
+        text_config_changed = False
+        is_valid, error_msg = validate_model_name(st_text_model_name, "Codex")
+        if is_valid:
+            text_config_changed = (
+                config.app.get("text_llm_provider") != DEFAULT_CODEX_PROVIDER
+                or config.app.get("text_codex_model_name") != st_text_model_name
+            )
+            if text_config_changed:
+                config.app["text_llm_provider"] = DEFAULT_CODEX_PROVIDER
+                config.app["text_codex_model_name"] = st_text_model_name
+            st.session_state["text_codex_model_name"] = st_text_model_name
+        else:
+            text_validation_errors.append(error_msg)
+
+        show_config_validation_errors(text_validation_errors)
+        if text_config_changed and not text_validation_errors:
+            try:
+                config.save_config()
+                UnifiedLLMService.clear_cache()
+                st.success("文案生成模型配置已保存（Codex OAuth）")
+            except Exception as e:
+                st.error(f"保存配置失败: {str(e)}")
+                logger.error(f"保存文案生成 Codex 配置失败: {str(e)}")
+        return
+
     st_text_model_name = normalize_openai_compatible_model_name(model_name_input)
 
     st_text_api_key = st.text_input(
@@ -755,7 +856,7 @@ def render_text_llm_settings(tr):
     )
 
     text_base_help, text_base_required, text_placeholder = build_base_url_help(
-        selected_provider, "文案生成模型"
+        openai_provider, "文案生成模型"
     )
     st_text_base_url = st.text_input(
         tr("Text Base URL"),
@@ -804,6 +905,7 @@ def render_text_llm_settings(tr):
     if st_text_model_name:
         is_valid, error_msg = validate_openai_compatible_model_name(st_text_model_name, "文案生成")
         if is_valid:
+            config.app["text_llm_provider"] = DEFAULT_OPENAI_COMPATIBLE_PROVIDER
             config.app["text_openai_model_name"] = st_text_model_name
             st.session_state["text_openai_model_name"] = st_text_model_name
             text_config_changed = True

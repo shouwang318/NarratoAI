@@ -11,6 +11,9 @@
     ##########################################
     # 统一使用 OpenAI 兼容协议（/v1/chat/completions）
     # 支持接入 OpenAI、DeepSeek、Gemini 兼容网关、Qwen 网关、SiliconFlow、OpenRouter 等。
+    # 也可将 vision_llm_provider/text_llm_provider 设置为 "codex"，通过本机 Codex
+    # ChatGPT OAuth 登录路径调用 codex exec。使用前先运行 `codex login`。
+    codex_command = "codex"
 
     # ===== 视觉模型配置 =====
     vision_llm_provider = "openai"
@@ -25,6 +28,7 @@
     vision_openai_model_name = "Qwen/Qwen3.5-122B-A10B"
     vision_openai_api_key = ""  # 填入对应 provider 的 API key
     vision_openai_base_url = "https://api.siliconflow.cn/v1"  # 可选：自定义 API base URL（官方 OpenAI 可留空）
+    vision_codex_model_name = "gpt-5.4"  # Codex OAuth 模式下使用的 Codex 模型
 
     # ===== 文本模型配置 =====
     text_llm_provider = "openai"
@@ -40,6 +44,7 @@
     text_openai_model_name = "Pro/zai-org/GLM-5"
     text_openai_api_key = ""  # 填入对应 provider 的 API key
     text_openai_base_url = "https://api.siliconflow.cn/v1"  # 可选：自定义 API base URL（官方 OpenAI 可留空）
+    text_codex_model_name = "gpt-5.4"  # Codex OAuth 模式下使用的 Codex 模型
 
     # ===== API Keys 参考 =====
     # 主流 LLM Providers API Key 获取地址：

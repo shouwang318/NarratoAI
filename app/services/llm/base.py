@@ -15,6 +15,8 @@ from .exceptions import LLMServiceError, ConfigurationError
 
 class BaseLLMProvider(ABC):
     """大模型服务提供商基类"""
+
+    requires_api_key = True
     
     def __init__(self, 
                  api_key: str,
@@ -55,7 +57,7 @@ class BaseLLMProvider(ABC):
     
     def _validate_config(self):
         """验证配置参数"""
-        if not self.api_key:
+        if self.requires_api_key and not self.api_key:
             raise ConfigurationError("API密钥不能为空", "api_key")
 
         if not self.model_name:
