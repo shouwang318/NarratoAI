@@ -85,6 +85,16 @@
     "TTS Provider": "TTS Provider",
     "Hide Log": "Hide Log",
     "Upload Local Files": "Upload Local Files",
+    "YouTube URL": "YouTube URL",
+    "YouTube Resolution": "YouTube Resolution",
+    "Output Format": "Output Format",
+    "Save As": "Save As",
+    "Optional filename without extension": "Optional filename without extension",
+    "Download YouTube Video": "Download YouTube Video",
+    "Downloading YouTube Video": "Downloading YouTube video...",
+    "YouTube Video Downloaded": "YouTube video downloaded",
+    "YouTube Video Download Failed": "YouTube video download failed",
+    "Please enter a YouTube URL": "Please enter a YouTube URL",
     "File Uploaded Successfully": "File Uploaded Successfully",
     "Frame Interval (seconds)": "Frame Interval (seconds) (More keyframes consume more tokens)"
   }

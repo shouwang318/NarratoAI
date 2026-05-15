@@ -14,6 +14,10 @@ from webui.tools.generate_script_docu import generate_script_docu
 from webui.tools.generate_script_short import generate_script_short
 from webui.tools.generate_short_summary import generate_script_short_sunmmary
 
+VIDEO_UPLOAD_LOCAL = "upload_local"
+VIDEO_YOUTUBE_URL = "youtube_url"
+YOUTUBE_RESOLUTION_OPTIONS = ["2160p", "1440p", "1080p", "720p", "480p", "360p", "240p", "144p"]
+
 
 def render_script_panel(tr):
     """渲染脚本配置面板"""
@@ -224,27 +228,56 @@ def render_script_file(tr, params):
 
 def render_video_file(tr, params):
     """渲染视频文件选择"""
-    video_list = [(tr("None"), ""), (tr("Upload Local Files"), "upload_local")]
+    video_list = [
+        (tr("None"), ""),
+        (tr("Upload Local Files"), VIDEO_UPLOAD_LOCAL),
+        (tr("YouTube URL"), VIDEO_YOUTUBE_URL),
+    ]
 
     # 获取已有视频文件
-    for suffix in ["*.mp4", "*.mov", "*.avi", "*.mkv"]:
+    for suffix in ["*.mp4", "*.mov", "*.avi", "*.mkv", "*.webm", "*.flv"]:
         video_files = glob.glob(os.path.join(utils.video_dir(), suffix))
         for file in video_files:
             display_name = file.replace(config.root_dir, "")
             video_list.append((display_name, file))
 
+    forced_video_selection = False
+    saved_video_path = st.session_state.get('video_origin_path', '')
+    selected_index = 0
+    if st.session_state.get('_select_video_origin_path'):
+        forced_video_selection = True
+        saved_video_path = st.session_state.pop('_select_video_origin_path')
+        st.session_state['video_origin_path'] = saved_video_path
+
+    for i, (_, path) in enumerate(video_list):
+        if path == saved_video_path:
+            selected_index = i
+            break
+
+    if (
+        forced_video_selection
+        or "video_file_selection" not in st.session_state
+        or st.session_state["video_file_selection"] not in range(len(video_list))
+    ):
+        st.session_state["video_file_selection"] = selected_index
+
     selected_video_index = st.selectbox(
         tr("Video File"),
-        index=0,
+        index=selected_index,
         options=range(len(video_list)),
-        format_func=lambda x: video_list[x][0]
+        format_func=lambda x: video_list[x][0],
+        key="video_file_selection"
     )
 
     video_path = video_list[selected_video_index][1]
-    st.session_state['video_origin_path'] = video_path
-    params.video_origin_path = video_path
+    if video_path not in (VIDEO_UPLOAD_LOCAL, VIDEO_YOUTUBE_URL):
+        st.session_state['video_origin_path'] = video_path
+        params.video_origin_path = video_path
+    else:
+        st.session_state['video_origin_path'] = ""
+        params.video_origin_path = ""
 
-    if video_path == "upload_local":
+    if video_path == VIDEO_UPLOAD_LOCAL:
         uploaded_file = st.file_uploader(
             tr("Upload Local Files"),
             type=["mp4", "mov", "avi", "flv", "mkv"],
@@ -265,9 +298,69 @@ def render_video_file(tr, params):
                 f.write(uploaded_file.read())
                 st.success(tr("File Uploaded Successfully"))
                 st.session_state['video_origin_path'] = video_file_path
+                st.session_state['_select_video_origin_path'] = video_file_path
                 params.video_origin_path = video_file_path
                 time.sleep(1)
                 st.rerun()
+
+    if video_path == VIDEO_YOUTUBE_URL:
+        render_youtube_video_import(tr, params)
+
+
+def render_youtube_video_import(tr, params):
+    """渲染 YouTube URL 导入控件。"""
+    youtube_url = st.text_input(
+        tr("YouTube URL"),
+        placeholder="https://www.youtube.com/watch?v=...",
+        key="youtube_video_url",
+    )
+
+    youtube_cols = st.columns([1, 1, 2])
+    with youtube_cols[0]:
+        resolution = st.selectbox(
+            tr("YouTube Resolution"),
+            options=YOUTUBE_RESOLUTION_OPTIONS,
+            index=YOUTUBE_RESOLUTION_OPTIONS.index("720p"),
+            key="youtube_video_resolution",
+        )
+    with youtube_cols[1]:
+        output_format = st.selectbox(
+            tr("Output Format"),
+            options=["mp4", "mkv", "webm"],
+            index=0,
+            key="youtube_video_output_format",
+        )
+    with youtube_cols[2]:
+        rename = st.text_input(
+            tr("Save As"),
+            placeholder=tr("Optional filename without extension"),
+            key="youtube_video_rename",
+        )
+
+    if st.button(tr("Download YouTube Video"), key="download_youtube_video", use_container_width=True):
+        if not youtube_url.strip():
+            st.error(tr("Please enter a YouTube URL"))
+            return
+
+        with st.spinner(tr("Downloading YouTube Video")):
+            try:
+                from app.services.youtube_service import YoutubeService
+
+                _, output_path, filename = YoutubeService().download_video_sync(
+                    url=youtube_url,
+                    resolution=resolution,
+                    output_format=output_format,
+                    rename=rename,
+                )
+                st.session_state['video_origin_path'] = output_path
+                st.session_state['_select_video_origin_path'] = output_path
+                params.video_origin_path = output_path
+                st.success(f"{tr('YouTube Video Downloaded')}: {filename}")
+                time.sleep(1)
+                st.rerun()
+            except Exception as e:
+                logger.error(f"YouTube 视频下载失败: {traceback.format_exc()}")
+                st.error(f"{tr('YouTube Video Download Failed')}: {str(e)}")
 
 
 def render_short_generate_options(tr):
