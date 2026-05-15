@@ -95,6 +95,14 @@
     "YouTube Video Downloaded": "YouTube video downloaded",
     "YouTube Video Download Failed": "YouTube video download failed",
     "Please enter a YouTube URL": "Please enter a YouTube URL",
+    "Use Browser Sign-In Cookies": "Use browser sign-in cookies",
+    "Use Browser Sign-In Cookies Help": "Loads cookies locally through yt-dlp for videos that require YouTube sign-in. Cookie values are not shown or saved in the app.",
+    "Cookies Browser": "Cookies browser",
+    "Cookies Profile": "Cookies profile",
+    "Cookies Profile Help": "Chrome profile name or path, such as Default or Profile 1. Leave empty to use the browser's most recently accessed profile.",
+    "Chrome Account Email": "Chrome account email",
+    "Chrome Account Email Help": "Optional. Used only to auto-detect the local Chrome profile; the email is not saved.",
+    "Detected Chrome Profile": "Detected Chrome profile",
     "File Uploaded Successfully": "File Uploaded Successfully",
     "Frame Interval (seconds)": "Frame Interval (seconds) (More keyframes consume more tokens)"
   }

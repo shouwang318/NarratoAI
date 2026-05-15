@@ -17,6 +17,7 @@ from webui.tools.generate_short_summary import generate_script_short_sunmmary
 VIDEO_UPLOAD_LOCAL = "upload_local"
 VIDEO_YOUTUBE_URL = "youtube_url"
 YOUTUBE_RESOLUTION_OPTIONS = ["2160p", "1440p", "1080p", "720p", "480p", "360p", "240p", "144p"]
+YOUTUBE_COOKIE_BROWSER_OPTIONS = ["chrome", "safari", "firefox", "edge", "brave", "chromium"]
 
 
 def render_script_panel(tr):
@@ -337,6 +338,55 @@ def render_youtube_video_import(tr, params):
             key="youtube_video_rename",
         )
 
+    use_browser_cookies = st.checkbox(
+        tr("Use Browser Sign-In Cookies"),
+        value=bool(config.app.get("youtube_use_browser_cookies", False)),
+        help=tr("Use Browser Sign-In Cookies Help"),
+        key="youtube_use_browser_cookies",
+    )
+
+    cookies_browser = config.app.get("youtube_cookies_browser", "chrome") or "chrome"
+    if cookies_browser not in YOUTUBE_COOKIE_BROWSER_OPTIONS:
+        cookies_browser = "chrome"
+
+    cookies_profile = ""
+    cookies_account_email = ""
+    if use_browser_cookies:
+        cookie_cols = st.columns([1, 1, 2])
+        with cookie_cols[0]:
+            cookies_browser = st.selectbox(
+                tr("Cookies Browser"),
+                options=YOUTUBE_COOKIE_BROWSER_OPTIONS,
+                index=YOUTUBE_COOKIE_BROWSER_OPTIONS.index(cookies_browser),
+                key="youtube_cookies_browser",
+            )
+        with cookie_cols[1]:
+            cookies_profile = st.text_input(
+                tr("Cookies Profile"),
+                value=config.app.get("youtube_cookies_profile", ""),
+                placeholder="Default / Profile 1",
+                help=tr("Cookies Profile Help"),
+                key="youtube_cookies_profile",
+            )
+        with cookie_cols[2]:
+            cookies_account_email = st.text_input(
+                tr("Chrome Account Email"),
+                placeholder="name@example.com",
+                help=tr("Chrome Account Email Help"),
+                key="youtube_cookies_account_email",
+            )
+
+        if cookies_browser == "chrome" and cookies_account_email and not cookies_profile:
+            try:
+                from app.services.youtube_service import YoutubeService
+
+                detected_profile = YoutubeService().detect_chrome_profile_for_account(cookies_account_email)
+                if detected_profile:
+                    cookies_profile = detected_profile
+                    st.info(f"{tr('Detected Chrome Profile')}: {detected_profile}")
+            except Exception:
+                logger.debug(f"Chrome profile auto-detect failed: {traceback.format_exc()}")
+
     if st.button(tr("Download YouTube Video"), key="download_youtube_video", use_container_width=True):
         if not youtube_url.strip():
             st.error(tr("Please enter a YouTube URL"))
@@ -351,10 +401,18 @@ def render_youtube_video_import(tr, params):
                     resolution=resolution,
                     output_format=output_format,
                     rename=rename,
+                    use_browser_cookies=use_browser_cookies,
+                    cookies_browser=cookies_browser,
+                    cookies_profile=cookies_profile,
+                    cookies_account_email=cookies_account_email,
                 )
                 st.session_state['video_origin_path'] = output_path
                 st.session_state['_select_video_origin_path'] = output_path
                 params.video_origin_path = output_path
+                config.app["youtube_use_browser_cookies"] = use_browser_cookies
+                config.app["youtube_cookies_browser"] = cookies_browser
+                config.app["youtube_cookies_profile"] = cookies_profile or ""
+                config.save_config()
                 st.success(f"{tr('YouTube Video Downloaded')}: {filename}")
                 time.sleep(1)
                 st.rerun()

@@ -10,6 +10,7 @@ tomli-w>=1.0.0
 pydub==0.25.1
 pysrt==1.1.2
 yt-dlp>=2026.3.17
+yt-dlp-ejs>=0.8.0
 
 # AI 服务依赖
 openai>=1.77.0

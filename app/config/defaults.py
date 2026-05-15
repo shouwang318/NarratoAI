@@ -7,6 +7,7 @@ DEFAULT_OPENAI_COMPATIBLE_PROVIDER = "openai"
 DEFAULT_CODEX_PROVIDER = "codex"
 DEFAULT_CODEX_COMMAND = "codex"
 DEFAULT_CODEX_MODEL_NAME = "gpt-5.4"
+DEFAULT_YOUTUBE_COOKIES_BROWSER = "chrome"
 
 DEFAULT_VISION_LLM_PROVIDER = DEFAULT_OPENAI_COMPATIBLE_PROVIDER
 DEFAULT_VISION_OPENAI_MODEL_NAME = "Qwen/Qwen3.5-122B-A10B"
@@ -28,6 +29,9 @@ DEFAULT_LLM_APP_CONFIG = {
     "text_openai_base_url": DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
     "text_codex_model_name": DEFAULT_TEXT_CODEX_MODEL_NAME,
     "codex_command": DEFAULT_CODEX_COMMAND,
+    "youtube_use_browser_cookies": False,
+    "youtube_cookies_browser": DEFAULT_YOUTUBE_COOKIES_BROWSER,
+    "youtube_cookies_profile": "",
 }
 
 

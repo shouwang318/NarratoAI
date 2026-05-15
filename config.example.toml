@@ -46,6 +46,13 @@
     text_openai_base_url = "https://api.siliconflow.cn/v1"  # 可选：自定义 API base URL（官方 OpenAI 可留空）
     text_codex_model_name = "gpt-5.4"  # Codex OAuth 模式下使用的 Codex 模型
 
+    # ===== YouTube 导入配置 =====
+    # 对需要登录/会员/年龄确认的 YouTube 视频，可启用本机浏览器登录 Cookies。
+    # Cookie 值不会写入配置文件；这里只保存浏览器和配置文件名称。
+    youtube_use_browser_cookies = false
+    youtube_cookies_browser = "chrome"
+    youtube_cookies_profile = ""  # 例如 "Profile 1"；留空时 yt-dlp 使用最近访问的配置文件
+
     # ===== API Keys 参考 =====
     # 主流 LLM Providers API Key 获取地址：
     #

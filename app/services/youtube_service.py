@@ -3,6 +3,8 @@ import os
 import re
 import shutil
 import sys
+import json
+from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 from loguru import logger
 from urllib.parse import urlparse
@@ -75,14 +77,81 @@ class YoutubeService:
 
         return None
 
-    def _get_video_formats(self, url: str) -> List[Dict]:
+    def _js_runtimes(self) -> Optional[dict[str, dict[str, str]]]:
+        """Enable a local JavaScript runtime for YouTube signed-in challenge solving."""
+        node_path = shutil.which("node")
+        if not node_path:
+            local_node_path = Path.home() / ".local" / "bin" / "node"
+            if local_node_path.exists():
+                node_path = str(local_node_path)
+
+        return {"node": {"path": node_path}} if node_path else None
+
+    def detect_chrome_profile_for_account(self, account_email: str) -> Optional[str]:
+        """Find a local Chrome profile that has the requested account email."""
+        email = (account_email or "").strip().lower()
+        if not email:
+            return None
+
+        chrome_root = Path.home() / "Library" / "Application Support" / "Google" / "Chrome"
+        local_state = chrome_root / "Local State"
+        preferred_profiles = []
+        try:
+            local_state_data = json.loads(local_state.read_text(errors="ignore"))
+            profile_data = local_state_data.get("profile", {})
+            preferred_profiles.extend(profile_data.get("last_active_profiles") or [])
+            last_used = profile_data.get("last_used")
+            if last_used:
+                preferred_profiles.append(last_used)
+        except (OSError, json.JSONDecodeError):
+            pass
+
+        candidates = []
+        for preferences_file in chrome_root.glob("*/Preferences"):
+            try:
+                preferences_text = preferences_file.read_text(errors="ignore").lower()
+            except OSError:
+                continue
+            if email in preferences_text:
+                candidates.append(preferences_file.parent.name)
+
+        for profile_name in preferred_profiles:
+            if profile_name in candidates:
+                return profile_name
+
+        return candidates[0] if candidates else None
+
+    def _browser_cookie_spec(
+            self,
+            use_browser_cookies: bool = False,
+            cookies_browser: str = "chrome",
+            cookies_profile: Optional[str] = None,
+            cookies_account_email: Optional[str] = None,
+    ) -> Optional[tuple]:
+        if not use_browser_cookies:
+            return None
+
+        browser = (cookies_browser or "chrome").strip().lower()
+        profile = (cookies_profile or "").strip() or None
+        if browser == "chrome" and not profile and cookies_account_email:
+            profile = self.detect_chrome_profile_for_account(cookies_account_email)
+
+        return browser, profile, None, None
+
+    def _get_video_formats(self, url: str, browser_cookie_spec: Optional[tuple] = None) -> List[Dict]:
         """获取视频可用的格式列表"""
         yt_dlp = self._get_yt_dlp()
         normalized_url = self._normalize_youtube_url(url)
         ydl_opts = {
             'quiet': True,
-            'no_warnings': True
+            'no_warnings': True,
+            'ignore_no_formats_error': True,
         }
+        js_runtimes = self._js_runtimes()
+        if js_runtimes:
+            ydl_opts['js_runtimes'] = js_runtimes
+        if browser_cookie_spec:
+            ydl_opts['cookiesfrombrowser'] = browser_cookie_spec
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -120,7 +189,11 @@ class YoutubeService:
             url: str,
             resolution: str,
             output_format: str = 'mp4',
-            rename: Optional[str] = None
+            rename: Optional[str] = None,
+            use_browser_cookies: bool = False,
+            cookies_browser: str = "chrome",
+            cookies_profile: Optional[str] = None,
+            cookies_account_email: Optional[str] = None,
     ) -> Tuple[str, str, str]:
         """
         同步下载指定分辨率的视频。
@@ -133,13 +206,26 @@ class YoutubeService:
             normalized_url = self._normalize_youtube_url(url)
             task_id = str(uuid4())
             self._validate_format(output_format)
+            browser_cookie_spec = self._browser_cookie_spec(
+                use_browser_cookies=use_browser_cookies,
+                cookies_browser=cookies_browser,
+                cookies_profile=cookies_profile,
+                cookies_account_email=cookies_account_email,
+            )
 
             base_resolution = resolution.split('p')[0] + 'p'
-            formats = self._get_video_formats(normalized_url)
+            formats = self._get_video_formats(normalized_url, browser_cookie_spec)
 
             target_format = None
             requested_height = self._resolution_height(base_resolution)
-            video_formats = [fmt for fmt in formats if fmt['resolution'] != 'N/A' and fmt['vcodec'] != 'none']
+            video_formats = [
+                fmt for fmt in formats
+                if fmt['resolution'] != 'N/A'
+                and fmt['vcodec'] not in ('none', 'N/A')
+                and fmt['ext'].lower() in self.supported_formats
+            ]
+            if not video_formats:
+                raise ValueError("未找到可下载的视频格式。该视频可能受 DRM 保护，yt-dlp 只能读取缩略图或故事板格式。")
             if requested_height:
                 candidates = [
                     fmt for fmt in video_formats
@@ -181,6 +267,11 @@ class YoutubeService:
                 filename_stem = self._sanitize_filename_stem(rename)
             else:
                 preview_opts = {'quiet': True, 'no_warnings': True}
+                js_runtimes = self._js_runtimes()
+                if js_runtimes:
+                    preview_opts['js_runtimes'] = js_runtimes
+                if browser_cookie_spec:
+                    preview_opts['cookiesfrombrowser'] = browser_cookie_spec
                 with yt_dlp.YoutubeDL(preview_opts) as ydl:
                     info = ydl.extract_info(normalized_url, download=False)
                 title = self._sanitize_filename_stem(info.get('title', task_id))
@@ -208,6 +299,11 @@ class YoutubeService:
             ffmpeg_location = self._ffmpeg_location()
             if ffmpeg_location:
                 ydl_opts['ffmpeg_location'] = ffmpeg_location
+            js_runtimes = self._js_runtimes()
+            if js_runtimes:
+                ydl_opts['js_runtimes'] = js_runtimes
+            if browser_cookie_spec:
+                ydl_opts['cookiesfrombrowser'] = browser_cookie_spec
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.extract_info(normalized_url, download=True)
@@ -231,7 +327,11 @@ class YoutubeService:
             url: str,
             resolution: str,
             output_format: str = 'mp4',
-            rename: Optional[str] = None
+            rename: Optional[str] = None,
+            use_browser_cookies: bool = False,
+            cookies_browser: str = "chrome",
+            cookies_profile: Optional[str] = None,
+            cookies_account_email: Optional[str] = None,
     ) -> Tuple[str, str, str]:
         """
         下载指定分辨率的视频
@@ -246,4 +346,13 @@ class YoutubeService:
         Returns:
             Tuple[str, str, str]: (task_id, output_path, filename)
         """
-        return self.download_video_sync(url, resolution, output_format, rename)
+        return self.download_video_sync(
+            url,
+            resolution,
+            output_format,
+            rename,
+            use_browser_cookies=use_browser_cookies,
+            cookies_browser=cookies_browser,
+            cookies_profile=cookies_profile,
+            cookies_account_email=cookies_account_email,
+        )
